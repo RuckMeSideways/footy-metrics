@@ -1,1 +1,41 @@
+# Place this file at: .github/workflows/update-matches.yml
+# No secret required.
+name: Update match data
 
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily, 06:00 UTC
+  workflow_dispatch: {}     # lets you trigger it manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  update-matches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Fetch match data
+        run: python scripts/update_matches.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/matches.json data/teams.json
+          if git diff --cached --quiet; then
+            echo "No match data changes"
+          else
+            git commit -m "Update match data $(date -u +'%Y-%m-%d')"
+            git push
+          fi
