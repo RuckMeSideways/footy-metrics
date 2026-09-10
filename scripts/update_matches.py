@@ -37,6 +37,7 @@ DATA_DIR = Path("data")
 MATCHES_FILE = DATA_DIR / "events.json"
 TEAM_STATS_DIR = DATA_DIR / "team-stats"
 PLAYS_DIR = DATA_DIR / "plays"
+KEY_EVENTS_DIR = DATA_DIR / "key-events"
 
 LEAGUES = {
     "eng.1": "Premier League",
@@ -128,10 +129,56 @@ def resolve_team_name(cache, ref_url):
         return None
 
 
+def resolve_athlete_name(cache, ref_url):
+    key = ref_url.split("?")[0]
+    if key in cache:
+        return cache[key]
+    try:
+        data = get_json(key)
+        name = data.get("displayName") or data.get("fullName")
+        cache[key] = name
+        return name
+    except Exception:
+        return None
+
+
+def extract_key_events(plays_data, team_name_cache, athlete_cache):
+    """Pulls goals and cards out of the full ~180-events-per-match play
+    log into a small, purpose-built list - confirmed shape: a goal has
+    scoringPlay=true and scoreValue=1; cards have redCard/yellowCard=true.
+    Much cheaper for the app to use than the full raw play-by-play."""
+    events = []
+    for item in plays_data.get("items", []):
+        is_goal = item.get("scoringPlay") and item.get("scoreValue")
+        is_red = item.get("redCard")
+        is_yellow = item.get("yellowCard")
+        if not (is_goal or is_red or is_yellow):
+            continue
+        team_ref = (item.get("team") or {}).get("$ref", "")
+        team_name = resolve_team_name(team_name_cache, team_ref) if team_ref else None
+        participants = item.get("participants") or []
+        player_name = None
+        if participants:
+            athlete_ref = (participants[0].get("athlete") or {}).get("$ref", "")
+            if athlete_ref:
+                player_name = resolve_athlete_name(athlete_cache, athlete_ref)
+        events.append({
+            "minute": (item.get("clock") or {}).get("displayValue"),
+            "type": "goal" if is_goal else "red_card" if is_red else "yellow_card",
+            "team_name": team_name,
+            "player_name": player_name,
+            "home_score": item.get("homeScore"),
+            "away_score": item.get("awayScore"),
+        })
+        time.sleep(REQUEST_PAUSE_SECONDS)
+    return events
+
+
 def main():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     events_by_id = {e["event_id"]: e for e in load_json(MATCHES_FILE, [])}
     team_name_cache = {}
+    athlete_name_cache = {}
     processed_new = 0
 
     for slug, league_name in LEAGUES.items():
@@ -193,6 +240,8 @@ def main():
                 try:
                     plays = get_json(f"{CORE_BASE}/leagues/{slug}/events/{eid}/competitions/{eid}/plays", {"limit": 300})
                     save_json(PLAYS_DIR / f"{eid}.json", plays)
+                    key_events = extract_key_events(plays, team_name_cache, athlete_name_cache)
+                    save_json(KEY_EVENTS_DIR / f"{eid}.json", key_events)
                 except Exception as e:
                     print(f"  ! failed fetching plays for event {eid}: {e}")
                 time.sleep(REQUEST_PAUSE_SECONDS)
