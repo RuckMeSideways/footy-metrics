@@ -1,0 +1,228 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07130d"><link rel="manifest" href="manifest.json"><title>Footy Metrics v1</title><style>
+body{margin:0;font-family:system-ui;background:#07130d;color:#eef2f7}header{padding:16px;background:#0b1a12;border-bottom:2px solid #1f8a5c}h1{margin:0;font-size:23px}.sub{color:#5fd9a4;font-size:12px}nav{display:flex;gap:7px;overflow:auto;padding:9px;background:#0a1710;position:sticky;top:0;border-bottom:1px solid #163a28}button{border:0;border-radius:9px;padding:10px 13px;background:#1f8a5c;color:#f2fff8;font-weight:700}button:active{background:#166a46}.tab{display:none;max-width:1100px;margin:auto;padding:14px}.tab.active{display:block}.card{background:#0e1f16;border:1px solid #1c3a2a;border-radius:14px;padding:14px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}input,select{background:#07130d;color:#eef2f7;border:1px solid #2c5a40;border-radius:8px;padding:10px;width:100%;box-sizing:border-box}.field{display:flex;flex-direction:column;gap:5px}.field label,.muted{color:#8fb8a4}.row{display:flex;gap:8px;flex-wrap:wrap}.result{padding:12px;border:1px solid #1c3a2a;border-radius:10px;margin:8px 0}.score{text-align:center;font-size:34px;font-weight:800;color:#f2c94c}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #1c3a2a;text-align:left}th{color:#f2c94c}.event-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1c3a2a;font-size:14px}.event-row:last-child{border-bottom:none}
+h2{color:#f2c94c}h3{color:#eef2f7}a{color:#f2c94c}
+</style></head><body>
+<header><h1>⚽ Footy Metrics</h1><div class="sub">v1 · Football Match Search &amp; Analysis</div></header>
+<nav>
+<button type="button" data-tab="search">🔎 Find Team</button>
+<button type="button" data-tab="fixtures">📅 Fixtures</button>
+<button type="button" data-tab="analysis">📊 Analysis</button>
+<button type="button" data-tab="standings">🏆 Standings</button>
+<button type="button" data-tab="graphics">🎥 Graphics</button>
+</nav>
+
+<section id="search" class="tab active">
+<div class="card"><h2>Find a Team</h2><p class="muted">Searches Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Champions League, World Cup, and South African Premiership. Results below show completed matches only - check the Fixtures tab for upcoming games.</p>
+<div class="field"><label>Team name</label><input id="q" placeholder="e.g. Arsenal, Real Madrid, Kaizer Chiefs"></div>
+<div class="row" style="margin-top:10px"><button type="button" id="btnFindTeam">Find Team</button></div>
+</div>
+<div id="teams" class="card"><span class="muted">Enter a team name.</span></div>
+<div id="results" class="card" style="display:none"></div>
+</section>
+
+<section id="fixtures" class="tab">
+<div class="card"><h2>Upcoming Fixtures</h2><p class="muted">Games after today's date for the team last searched on the Find Team tab. Search a team first if this is empty.</p></div>
+<div id="fixturesList" class="card"><span class="muted">Search a team on the Find Team tab first.</span></div>
+</section>
+
+<section id="analysis" class="tab"><div class="card"><h2 id="title">No match loaded</h2><div id="meta" class="muted"></div><div id="score" class="score">—</div></div><div id="eventsCard" class="card" style="display:none"><h3>Match Events</h3><div id="eventsList"></div></div></section>
+
+<section id="standings" class="tab">
+<div class="card"><h2>Standings</h2>
+<div class="field"><label>Competition</label><select id="standingsLeague">
+<option value="">Choose a competition…</option>
+<option value="eng.1">Premier League</option>
+<option value="esp.1">La Liga</option>
+<option value="ger.1">Bundesliga</option>
+<option value="ita.1">Serie A</option>
+<option value="fra.1">Ligue 1</option>
+<option value="uefa.champions">Champions League</option>
+<option value="fifa.world">World Cup</option>
+<option value="rsa.1">South African Premiership</option>
+</select></div>
+</div>
+<div id="standingsResult"></div>
+</section>
+
+<section id="graphics" class="tab"><div class="card"><h2>Score Graphic</h2><div class="row"><button type="button" id="btnGScore">Score</button><button type="button" id="btnGEvents">Match Events</button><button type="button" id="btnSave">Download PNG</button></div><canvas id="cv" width="1280" height="720" style="width:100%;margin-top:12px"></canvas></div></section>
+
+<script>
+const RAW='https://raw.githubusercontent.com/RuckMeSideways/footy-metrics/main/data/';
+let EVENTS=null, currentTeamMatches=null, currentTeamName=null, current=null;
+
+const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const get=async u=>{let r=await fetch(u);if(!r.ok)throw Error(r.status+' fetching '+u);return r.json()};
+const tab=id=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active')};
+const fmt=d=>{let s=String(d||'');return s.includes('T')?s.slice(0,10):s};
+// Whether a match has actually been played yet, based on its date - same
+// reasoning as the rugby app: a fixture that hasn't kicked off yet needs
+// to be told apart from a genuinely completed match. The "completed"
+// flag we saved is the most direct signal, with date as a fallback.
+function isPlayedMatch(e){
+ if(typeof e.completed==='boolean') return e.completed;
+ let d=fmt(e.date);
+ if(!d) return true;
+ let dt=new Date(d+'T00:00:00');
+ if(isNaN(dt.getTime())) return true;
+ return dt.getTime()<=Date.now();
+}
+
+async function loadEvents(){
+ if(!EVENTS) EVENTS=await get(RAW+'events.json');
+}
+function teamList(){
+ let out=new Map();
+ (EVENTS||[]).forEach(e=>{
+  if(e.home_team_id&&e.home_team_name) out.set(e.home_team_id,e.home_team_name);
+  if(e.away_team_id&&e.away_team_name) out.set(e.away_team_id,e.away_team_name);
+ });
+ return Array.from(out,([id,name])=>({id,name}));
+}
+
+async function search(){
+ let raw=document.getElementById('q').value;
+ let q=norm(raw);if(!q)return;
+ let box=document.getElementById('teams');box.innerHTML='<b>Searching…</b>';
+ try{
+  await loadEvents();
+  let hits=teamList().filter(t=>norm(t.name).includes(q));
+  hits.sort((a,b)=>{
+   let ae=norm(a.name)===q?0:1,be=norm(b.name)===q?0:1;
+   if(ae!==be)return ae-be;
+   return a.name.length-b.name.length;
+  });
+  if(!hits.length){box.innerHTML='<b>No team found.</b><p class="muted">Try a shorter or differently-spelled name.</p>';return}
+  box.innerHTML='<h3>Teams found ('+hits.length+')</h3>'+hits.slice(0,20).map(t=>
+   '<div class="result"><b>'+esc(t.name)+'</b><button type="button" class="btn-select-team" data-team-id="'+esc(t.id)+'" data-team-name="'+esc(t.name)+'">Find Matches</button></div>'
+  ).join('');
+ }catch(e){box.innerHTML='<b>Could not load team data.</b><p class="muted">'+esc(e.message)+' — check the data bridge has run at least once.</p>'}
+}
+
+async function selectTeam(teamId,teamName){
+ let box=document.getElementById('results');box.style.display='block';box.innerHTML='<b>Loading matches for '+esc(teamName)+'…</b>';
+ try{
+  await loadEvents();
+  let all=(EVENTS||[]).filter(e=>String(e.home_team_id)===String(teamId)||String(e.away_team_id)===String(teamId));
+  currentTeamMatches=all;
+  currentTeamName=teamName;
+
+  let played=all.filter(isPlayedMatch).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  box.innerHTML=played.length?('<h3>'+esc(teamName)+' results ('+played.length+')</h3>'+played.slice(0,50).map(e=>{
+   let isHome=String(e.home_team_id)===String(teamId);
+   let opp=isHome?e.away_team_name:e.home_team_name;
+   let hs=e.home_score,as=e.away_score;
+   return '<div class="result"><b>'+esc(teamName)+' vs '+esc(opp)+'</b><div class="muted">'+fmt(e.date)+' · '+esc(e.league_name)+(hs!=null?' · '+hs+'–'+as:'')+'</div>'+
+   '<button type="button" class="btn-load-match" data-event-id="'+esc(e.event_id)+'">Load Match</button></div>';
+  }).join('')):'<p class="muted">No completed matches found yet for this team.</p>';
+
+  // Every team search also refreshes the Fixtures tab for the SAME team,
+  // so switching tabs after a search just works without a second lookup.
+  renderFixtures(teamId,teamName);
+ }catch(e){box.innerHTML='<b>Could not load matches.</b><p class="muted">'+esc(e.message)+'</p>'}
+}
+
+function renderFixtures(teamId,teamName){
+ let box=document.getElementById('fixturesList');
+ if(!currentTeamMatches){box.innerHTML='<span class="muted">Search a team on the Find Team tab first.</span>';return}
+ let upcoming=currentTeamMatches.filter(e=>!isPlayedMatch(e)).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+ box.innerHTML=upcoming.length?('<h3>'+esc(teamName)+' upcoming ('+upcoming.length+')</h3>'+upcoming.map(e=>{
+  let isHome=String(e.home_team_id)===String(teamId);
+  let opp=isHome?e.away_team_name:e.home_team_name;
+  return '<div class="result"><b>'+esc(teamName)+' vs '+esc(opp)+'</b><div class="muted">'+fmt(e.date)+' · '+esc(e.league_name)+'</div></div>';
+ }).join('')):'<p class="muted">No upcoming fixtures cached for this team yet.</p>';
+}
+
+async function loadMatch(eventId){
+ try{
+  await loadEvents();
+  let e=(EVENTS||[]).find(x=>String(x.event_id)===String(eventId));
+  if(!e){alert('Could not find that match.');return}
+  current=e;
+  document.getElementById('title').textContent=(e.home_team_name||'?')+' vs '+(e.away_team_name||'?');
+  document.getElementById('meta').textContent=fmt(e.date)+' · '+(e.league_name||'');
+  document.getElementById('score').textContent=(e.home_score??'—')+' – '+(e.away_score??'—');
+
+  let eventsCard=document.getElementById('eventsCard'),eventsList=document.getElementById('eventsList');
+  try{
+   let keyEvents=await get(RAW+'key-events/'+eventId+'.json');
+   if(keyEvents&&keyEvents.length){
+    eventsCard.style.display='block';
+    eventsList.innerHTML=keyEvents.map(ev=>{
+     let icon=ev.type==='goal'?'⚽':ev.type==='red_card'?'🟥':'🟨';
+     return '<div class="event-row"><span>'+icon+' '+esc(ev.player_name||'?')+' ('+esc(ev.team_name||'?')+')</span><span class="muted">'+esc(ev.minute||'')+'</span></div>';
+    }).join('');
+   }else{
+    eventsCard.style.display='block';
+    eventsList.innerHTML='<p class="muted">No goals or cards recorded for this match.</p>';
+   }
+  }catch(err){
+   eventsCard.style.display='block';
+   eventsList.innerHTML='<p class="muted">Match events not cached yet for this game.</p>';
+  }
+  tab('analysis');
+ }catch(e){alert('Could not load match: '+e.message)}
+}
+
+async function loadStandings(slug){
+ let box=document.getElementById('standingsResult');
+ if(!slug){box.innerHTML='';return}
+ box.innerHTML='<div class="card"><b>Loading…</b></div>';
+ try{
+  let data=await get(RAW+'standings/'+slug+'.json');
+  let groups=[];
+  (data.children||[]).forEach(child=>{
+   let entries=(child.standings&&child.standings.entries)||[];
+   if(entries.length) groups.push({name:child.name||data.name,entries});
+  });
+  if(!groups.length){box.innerHTML='<div class="card muted">No standings cached yet for this competition.</div>';return}
+  function statVal(stats,name){let s=(stats||[]).find(s=>s.name===name);return s?s.value:null}
+  box.innerHTML=groups.map(g=>{
+   let rows=g.entries.slice().sort((a,b)=>(statVal(a.stats,'rank')??999)-(statVal(b.stats,'rank')??999));
+   return '<div class="card"><h3>'+esc(g.name)+'</h3><table><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>'+
+    rows.map(r=>{
+     let t=r.team||{};
+     let s=r.stats;
+     return '<tr><td>'+(statVal(s,'rank')??'—')+'</td><td>'+esc(t.displayName||t.name)+'</td><td>'+(statVal(s,'gamesPlayed')??'—')+'</td><td>'+(statVal(s,'wins')??'—')+'</td><td>'+(statVal(s,'ties')??'—')+'</td><td>'+(statVal(s,'losses')??'—')+'</td><td>'+(statVal(s,'pointDifferential')??'—')+'</td><td><b>'+(statVal(s,'points')??'—')+'</b></td></tr>';
+    }).join('')+'</table></div>';
+  }).join('');
+ }catch(e){box.innerHTML='<div class="card"><b>Could not load standings.</b><p class="muted">'+esc(e.message)+'</p></div>'}
+}
+
+function graphic(type){
+ let c=document.getElementById('cv'),x=c.getContext('2d');
+ x.fillStyle='#07130d';x.fillRect(0,0,1280,720);
+ x.fillStyle='#f2c94c';x.font='bold 40px system-ui';x.textAlign='left';x.fillText('FOOTY METRICS',60,60);
+ if(!current){x.fillStyle='#fff';x.font='28px system-ui';x.fillText('Load a match first',60,160);return}
+ x.fillStyle='#fff';x.font='bold 34px system-ui';x.textAlign='center';
+ x.fillText((current.home_team_name||'?')+'   '+(current.home_score??'—')+' – '+(current.away_score??'—')+'   '+(current.away_team_name||'?'),640,110);
+ x.font='20px system-ui';x.fillStyle='#8fb8a4';x.fillText(fmt(current.date)+' · '+(current.league_name||''),640,145);
+ x.textAlign='left';
+ if(type==='events'){
+  get(RAW+'key-events/'+current.event_id+'.json').then(evs=>{
+   let y=220;
+   (evs||[]).slice(0,10).forEach(ev=>{
+    let icon=ev.type==='goal'?'GOAL':ev.type==='red_card'?'RED CARD':'YELLOW CARD';
+    x.fillStyle='#f2c94c';x.font='bold 22px system-ui';x.fillText(icon+' - '+(ev.minute||''),60,y);
+    x.fillStyle='#fff';x.font='22px system-ui';x.fillText((ev.player_name||'?')+' ('+(ev.team_name||'?')+')',60,y+28);
+    y+=60;
+   });
+  }).catch(()=>{x.fillStyle='#8fb8a4';x.font='22px system-ui';x.fillText('No match events cached for this game.',60,220)});
+ }
+}
+
+document.getElementById('btnFindTeam').addEventListener('click',search);
+document.getElementById('btnGScore').addEventListener('click',()=>graphic('score'));
+document.getElementById('btnGEvents').addEventListener('click',()=>graphic('events'));
+document.getElementById('btnSave').addEventListener('click',()=>{let a=document.createElement('a');a.download='footy-metrics.png';a.href=document.getElementById('cv').toDataURL();a.click()});
+document.getElementById('standingsLeague').addEventListener('change',e=>loadStandings(e.target.value));
+document.querySelectorAll('nav [data-tab]').forEach(btn=>btn.addEventListener('click',()=>tab(btn.dataset.tab)));
+
+document.body.addEventListener('click',function(e){
+ let selectBtn=e.target.closest('.btn-select-team');
+ if(selectBtn){selectTeam(selectBtn.dataset.teamId,selectBtn.dataset.teamName);return}
+ let loadBtn=e.target.closest('.btn-load-match');
+ if(loadBtn){loadMatch(loadBtn.dataset.eventId);return}
+});
+</script>
+</body></html>
