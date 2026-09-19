@@ -136,6 +136,43 @@ def main():
     except Exception as e:
         print(f"  ! failed: {e}")
 
+    print("\n=== TEST 5: the 'seasons' link found on the athlete record - the key one ===")
+    try:
+        athlete_id = refs["athlete_ref"].rstrip("/").split("/")[-1].split("?")[0]
+        league_slug = refs["athlete_ref"].split("/leagues/")[1].split("/")[0]
+        seasons_url = f"{CORE_BASE}/leagues/{league_slug}/athletes/{athlete_id}/seasons"
+        seasons = get_json(seasons_url, {"limit": 50})
+        print(f"  {seasons_url} -> success")
+        print(f"  top-level keys: {list(seasons.keys())}")
+        items = seasons.get("items", [])
+        print(f"  {len(items)} season(s) found")
+        if items:
+            first_item = items[0]
+            print(f"  first item raw: {json.dumps(first_item, default=str)[:400]}")
+            if isinstance(first_item, dict) and "$ref" in first_item and len(first_item) == 1:
+                print("  (item is a bare $ref - fetching it to see the real shape)")
+                followed = get_json(first_item["$ref"])
+                print(f"  followed keys: {list(followed.keys())}")
+                print(f"  followed content: {json.dumps(followed, default=str)[:500]}")
+    except Exception as e:
+        print(f"  ! failed: {e}")
+
+    print("\n=== TEST 6: eventLog - this player's match list for the season ===")
+    try:
+        athlete_id = refs["athlete_ref"].rstrip("/").split("/")[-1].split("?")[0]
+        league_slug = refs["athlete_ref"].split("/leagues/")[1].split("/")[0]
+        season = refs["athlete_ref"].split("/seasons/")[1].split("/")[0]
+        eventlog_url = f"{CORE_BASE}/leagues/{league_slug}/seasons/{season}/athletes/{athlete_id}/eventlog"
+        eventlog = get_json(eventlog_url, {"limit": 50})
+        print(f"  {eventlog_url} -> success")
+        print(f"  top-level keys: {list(eventlog.keys())}")
+        events = (eventlog.get("events") or {}).get("items", []) if isinstance(eventlog.get("events"), dict) else eventlog.get("items", [])
+        print(f"  {len(events)} event(s) found")
+        if events:
+            print(f"  first event raw: {json.dumps(events[0], default=str)[:400]}")
+    except Exception as e:
+        print(f"  ! failed: {e}")
+
     print("\nDone. Review the output above before deciding what to build next.")
 
 
