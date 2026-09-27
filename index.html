@@ -1,13 +1,14 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07130d"><link rel="manifest" href="manifest.json"><title>Footy Metrics v1</title><style>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07130d"><link rel="manifest" href="manifest.json"><title>Footy Metrics v2</title><style>
 body{margin:0;font-family:system-ui;background:#07130d;color:#eef2f7}header{padding:16px;background:#0b1a12;border-bottom:2px solid #1f8a5c}h1{margin:0;font-size:23px}.sub{color:#5fd9a4;font-size:12px}nav{display:flex;gap:7px;overflow:auto;padding:9px;background:#0a1710;position:sticky;top:0;border-bottom:1px solid #163a28}button{border:0;border-radius:9px;padding:10px 13px;background:#1f8a5c;color:#f2fff8;font-weight:700}button:active{background:#166a46}.tab{display:none;max-width:1100px;margin:auto;padding:14px}.tab.active{display:block}.card{background:#0e1f16;border:1px solid #1c3a2a;border-radius:14px;padding:14px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}input,select{background:#07130d;color:#eef2f7;border:1px solid #2c5a40;border-radius:8px;padding:10px;width:100%;box-sizing:border-box}.field{display:flex;flex-direction:column;gap:5px}.field label,.muted{color:#8fb8a4}.row{display:flex;gap:8px;flex-wrap:wrap}.result{padding:12px;border:1px solid #1c3a2a;border-radius:10px;margin:8px 0}.score{text-align:center;font-size:34px;font-weight:800;color:#f2c94c}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border-bottom:1px solid #1c3a2a;text-align:left}th{color:#f2c94c}.event-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1c3a2a;font-size:14px}.event-row:last-child{border-bottom:none}
 h2{color:#f2c94c}h3{color:#eef2f7}a{color:#f2c94c}
 </style></head><body>
-<header><h1>⚽ Footy Metrics</h1><div class="sub">v1 · Football Match Search &amp; Analysis</div></header>
+<header><h1>⚽ Footy Metrics</h1><div class="sub">v2 · Football Match Search &amp; Analysis</div></header>
 <nav>
 <button type="button" data-tab="search">🔎 Find Team</button>
 <button type="button" data-tab="fixtures">📅 Fixtures</button>
 <button type="button" data-tab="analysis">📊 Analysis</button>
 <button type="button" data-tab="standings">🏆 Standings</button>
+<button type="button" data-tab="players">👤 Players</button>
 <button type="button" data-tab="graphics">🎥 Graphics</button>
 </nav>
 
@@ -42,6 +43,13 @@ h2{color:#f2c94c}h3{color:#eef2f7}a{color:#f2c94c}
 </select></div>
 </div>
 <div id="standingsResult"></div>
+</section>
+
+<section id="players" class="tab">
+<div class="card"><h2>Search Player</h2><p class="muted">Search by name to see a player's current club and transfer history between seasons. Coverage builds gradually - only players already seen in a cached match, once the daily bridge has processed them.</p>
+<div class="row"><input id="playerQ" placeholder="e.g. Kepa Arrizabalaga" style="flex:1"><button type="button" id="btnPlayerSearch">Search</button></div>
+<div id="playerResults" class="muted" style="margin-top:10px">Enter a player name.</div>
+</div>
 </section>
 
 <section id="graphics" class="tab"><div class="card"><h2>Score Graphic</h2><div class="row"><button type="button" id="btnGScore">Score</button><button type="button" id="btnGEvents">Match Events</button><button type="button" id="btnSave">Download PNG</button></div><canvas id="cv" width="1280" height="720" style="width:100%;margin-top:12px"></canvas></div></section>
@@ -164,6 +172,50 @@ async function loadMatch(eventId){
  }catch(e){alert('Could not load match: '+e.message)}
 }
 
+let PLAYER_INDEX=null;
+async function loadPlayerIndex(){
+ if(!PLAYER_INDEX) PLAYER_INDEX=await get(RAW+'players/index.json');
+}
+async function searchPlayers(){
+ let raw=document.getElementById('playerQ').value;
+ let q=norm(raw);if(!q)return;
+ let box=document.getElementById('playerResults');
+ box.innerHTML='<b>Searching…</b>';
+ try{
+  await loadPlayerIndex();
+  let hits=(PLAYER_INDEX||[]).filter(p=>norm(p.name).includes(q));
+  hits.sort((a,b)=>{
+   let ae=norm(a.name)===q?0:1,be=norm(b.name)===q?0:1;
+   if(ae!==be)return ae-be;
+   return (a.name||'').length-(b.name||'').length;
+  });
+  if(!hits.length){box.innerHTML='<b>No player found.</b><p class="muted">Coverage builds gradually - try again once more matches have been processed, or try a different spelling.</p>';return}
+  box.innerHTML='<h3>Players found ('+hits.length+')</h3>'+hits.slice(0,20).map(p=>
+   '<div class="result"><b>'+esc(p.name)+'</b><button type="button" class="btn-view-player" data-player-id="'+esc(p.id)+'" data-player-name="'+esc(p.name)+'">View</button></div>'
+  ).join('');
+ }catch(e){box.innerHTML='<b>Could not load the player index.</b><p class="muted">'+esc(e.message)+' — check the player bridge has run at least once.</p>'}
+}
+async function loadPlayerProfile(playerId,playerName){
+ let box=document.getElementById('playerResults');
+ box.innerHTML='<b>Loading '+esc(playerName)+'…</b>';
+ try{
+  let p=await get(RAW+'players/'+playerId+'.json');
+  let stints=(p.stints||[]).slice().reverse();
+  let currentStint=stints[0];
+  let history=stints.slice(1);
+  box.innerHTML='<h3>'+esc(p.name||playerName)+'</h3>'+
+   (p.position?'<div class="muted">Position: '+esc(p.position)+'</div>':'')+
+   (currentStint?'<div class="card"><b>Current club:</b> '+esc(currentStint.team_name)+'<div class="muted">Since '+esc(currentStint.start_season)+' season</div></div>':'<p class="muted">No club history found yet.</p>')+
+   (history.length?'<h3 style="margin-top:14px">Previous clubs</h3>'+history.map(s=>
+    '<div class="result">'+esc(s.team_name)+'<div class="muted">'+esc(s.start_season)+' – '+esc(s.end_season)+' season(s)</div></div>'
+   ).join(''):'<p class="muted" style="margin-top:10px">No previous clubs on record - this may be their only tracked club, or they simply haven\'t transferred (yet).</p>')+
+   '<button type="button" id="btnBackToPlayerSearch" style="margin-top:10px">← Back to search</button>';
+ }catch(e){
+  box.innerHTML='<b>'+esc(playerName)+' hasn\'t been fully processed yet.</b><p class="muted">Check back after the next daily update.</p>'+
+   '<button type="button" id="btnBackToPlayerSearch" style="margin-top:10px">← Back to search</button>';
+ }
+}
+
 async function loadStandings(slug){
  let box=document.getElementById('standingsResult');
  if(!slug){box.innerHTML='';return}
@@ -212,6 +264,7 @@ function graphic(type){
 }
 
 document.getElementById('btnFindTeam').addEventListener('click',search);
+document.getElementById('btnPlayerSearch').addEventListener('click',searchPlayers);
 document.getElementById('btnGScore').addEventListener('click',()=>graphic('score'));
 document.getElementById('btnGEvents').addEventListener('click',()=>graphic('events'));
 document.getElementById('btnSave').addEventListener('click',()=>{let a=document.createElement('a');a.download='footy-metrics.png';a.href=document.getElementById('cv').toDataURL();a.click()});
@@ -223,6 +276,10 @@ document.body.addEventListener('click',function(e){
  if(selectBtn){selectTeam(selectBtn.dataset.teamId,selectBtn.dataset.teamName);return}
  let loadBtn=e.target.closest('.btn-load-match');
  if(loadBtn){loadMatch(loadBtn.dataset.eventId);return}
+ let viewPlayerBtn=e.target.closest('.btn-view-player');
+ if(viewPlayerBtn){loadPlayerProfile(viewPlayerBtn.dataset.playerId,viewPlayerBtn.dataset.playerName);return}
+ let backBtn=e.target.closest('#btnBackToPlayerSearch');
+ if(backBtn){searchPlayers();return}
 });
 </script>
 </body></html>
