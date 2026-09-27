@@ -1,0 +1,42 @@
+# Place this file at: .github/workflows/update-players.yml
+# No secret required. Reads data/team-stats/*.json, so update_matches.py
+# should have already run at least once.
+name: Update player tracking
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # daily, 07:00 UTC
+  workflow_dispatch: {}     # lets you trigger it manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  update-players:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Fetch player tracking data
+        run: python scripts/update_players.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/players/
+          if git diff --cached --quiet; then
+            echo "No player data changes"
+          else
+            git commit -m "Update player tracking $(date -u +'%Y-%m-%d')"
+            git push
+          fi
