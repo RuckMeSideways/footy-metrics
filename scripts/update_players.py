@@ -1,22 +1,19 @@
 """
-Footy Metrics - player tracking bridge
+Footy Metrics - player tracking bridge (v2)
 Runs inside GitHub Actions.
 
-Built from a two-round pilot (scripts/pilot_players.py) that confirmed:
-  - A league-scoped, non-season-specific athlete identity endpoint exists
-    (.../leagues/{league}/athletes/{id}) - a stable per-player record.
-  - Each athlete has a "seasons" link listing every season they have a
-    record for in that league.
-  - Each season has an "eventLog" link listing that player's matches for
-    the season, which itself carries a "teams" field - the mechanism we
-    use to detect a transfer (team affiliation changing between seasons,
-    or even within one season for a mid-season move).
+v1 guessed at the shape of eventLog's "teams" field and got it wrong -
+a real run confirmed it's a DICT KEYED BY TEAM ID (e.g. {"1068":
+{"id":"1068","team":{"$ref":...}}, "9812": {...}}), not a list or single
+object as originally guessed. This version parses the confirmed real
+shape. It also surfaces something genuinely useful the wrong guess would
+have hidden: a player can have more than one team ID within a single
+season (a mid-season loan or transfer) - we keep every one rather than
+collapsing to just one team per season.
 
-One thing the pilot could NOT confirm precisely: the exact shape of that
-"teams" field. Rather than guess and risk silently losing data, team
-extraction below tries a few reasonable shapes and falls back to saving
-the raw value if none match - so nothing is lost even if this needs
-refining once we see real output.
+Built from a two-round pilot (scripts/pilot_players.py) plus this one
+real-run correction - the same "verify, build, then fix from real
+output" cycle used throughout every bridge in this project.
 
 Incremental and capped, same pattern as every other bridge here.
 
@@ -86,39 +83,39 @@ def collect_candidate_athletes():
     return seen
 
 
-def extract_team_from_eventlog(eventlog):
-    """The 'teams' field's exact shape wasn't confirmed by the pilot -
-    try a few reasonable possibilities, and if none match, keep the raw
-    value so nothing is silently lost."""
+def extract_teams_from_eventlog(eventlog, team_name_cache):
+    """Confirmed real shape (from a live run): "teams" is a dict KEYED BY
+    TEAM ID, e.g. {"1068": {"id":"1068","team":{"$ref":...}}, "9812": {...}}
+    - not a list, not a single object, as originally guessed. A player can
+    have more than one team ID within a single season (a mid-season loan
+    or transfer), which is genuinely useful signal, not noise - we surface
+    every one rather than collapsing to just one team per season."""
     teams = eventlog.get("teams")
-    if teams is None:
-        return None, None, teams
-
-    # Possibility 1: a single {$ref, id, displayName} dict
-    if isinstance(teams, dict) and ("$ref" in teams or "displayName" in teams):
-        return teams.get("id"), teams.get("displayName") or teams.get("name"), teams
-
-    # Possibility 2: a list of team dicts/refs (mid-season transfer would
-    # show more than one)
-    if isinstance(teams, list) and teams:
-        first = teams[0]
-        if isinstance(first, dict):
-            team_id = first.get("id")
-            team_name = first.get("displayName") or first.get("name")
-            if not team_name and "$ref" in first:
+    if not isinstance(teams, dict):
+        return []  # unexpected shape - nothing usable this time
+    results = []
+    for team_id, entry in teams.items():
+        if not isinstance(entry, dict):
+            continue
+        team_name = None
+        team_ref = (entry.get("team") or {}).get("$ref", "")
+        if team_ref:
+            key = team_ref.split("?")[0]
+            if key in team_name_cache:
+                team_name = team_name_cache[key]
+            else:
                 try:
-                    resolved = get_json(first["$ref"])
-                    team_id = resolved.get("id")
+                    resolved = get_json(key)
                     team_name = resolved.get("displayName") or resolved.get("name")
+                    team_name_cache[key] = team_name
                     time.sleep(REQUEST_PAUSE_SECONDS)
                 except Exception:
                     pass
-            return team_id, team_name, teams
+        results.append({"team_id": entry.get("id") or team_id, "team_name": team_name})
+    return results
 
-    return None, None, teams
 
-
-def build_player_record(athlete_id, league_slug):
+def build_player_record(athlete_id, league_slug, team_name_cache):
     identity = get_json(f"{CORE_BASE}/leagues/{league_slug}/athletes/{athlete_id}")
     time.sleep(REQUEST_PAUSE_SECONDS)
     name = identity.get("displayName") or identity.get("fullName")
@@ -138,25 +135,29 @@ def build_player_record(athlete_id, league_slug):
             print(f"    ! failed fetching seasons list for {athlete_id}: {e}")
         time.sleep(REQUEST_PAUSE_SECONDS)
 
+    # stints: a chronological sequence of (team, season) entries. Within
+    # one season a player can have multiple teams (loan/transfer) - we
+    # can't perfectly order those without match-level dates, so they're
+    # appended in the order the API lists them, which is the best signal
+    # available at this level of detail.
     stints = []
-    raw_teams_by_season = {}
     for year in sorted(season_years):
         try:
             eventlog = get_json(f"{CORE_BASE}/leagues/{league_slug}/seasons/{year}/athletes/{athlete_id}/eventlog", {"limit": 100})
-            team_id, team_name, raw = extract_team_from_eventlog(eventlog)
-            if team_id or team_name:
-                if stints and stints[-1]["team_id"] == team_id:
-                    stints[-1]["end_season"] = year
-                else:
-                    stints.append({"team_id": team_id, "team_name": team_name, "start_season": year, "end_season": year})
-            else:
-                raw_teams_by_season[year] = raw  # couldn't parse - keep raw so nothing's lost
+            teams_this_season = extract_teams_from_eventlog(eventlog, team_name_cache)
         except Exception as e:
             print(f"    ! failed fetching eventlog for {athlete_id} season {year}: {e}")
+            teams_this_season = []
         time.sleep(REQUEST_PAUSE_SECONDS)
 
+        for t in teams_this_season:
+            if stints and stints[-1]["team_id"] == t["team_id"]:
+                stints[-1]["end_season"] = year
+            else:
+                stints.append({"team_id": t["team_id"], "team_name": t["team_name"], "start_season": year, "end_season": year})
+
     current = stints[-1] if stints else None
-    record = {
+    return {
         "id": athlete_id,
         "name": name,
         "position": position,
@@ -164,9 +165,6 @@ def build_player_record(athlete_id, league_slug):
         "current_team_name": current["team_name"] if current else None,
         "stints": stints,
     }
-    if raw_teams_by_season:
-        record["unparsed_teams_by_season"] = raw_teams_by_season
-    return record
 
 
 def main():
@@ -174,6 +172,7 @@ def main():
     invalid_ids = set(load_json(INVALID_FILE, []))
     index = load_json(INDEX_FILE, [])
     index_ids = {p["id"] for p in index}
+    team_name_cache = {}
 
     candidates = collect_candidate_athletes()
     print(f"Found {len(candidates)} candidate athlete(s) from cached team-stats files.")
@@ -186,10 +185,17 @@ def main():
             continue
         out_path = DATA_DIR / f"{athlete_id}.json"
         if out_path.exists():
-            continue  # already processed in a previous run
+            # Only truly skip if the existing record actually has real
+            # stints - a record left over from the earlier broken parser
+            # (empty stints, with the old "unparsed_teams_by_season"
+            # fallback field present) gets automatically reprocessed
+            # instead of requiring the old files to be deleted by hand.
+            existing = load_json(out_path, {})
+            if existing.get("stints") or "unparsed_teams_by_season" not in existing:
+                continue
 
         try:
-            record = build_player_record(athlete_id, league_slug)
+            record = build_player_record(athlete_id, league_slug, team_name_cache)
             save_json(out_path, record)
             if athlete_id not in index_ids:
                 index.append({"id": athlete_id, "name": record.get("name")})
