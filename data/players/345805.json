@@ -1,1 +1,1 @@
-{"id":"345805","name":"Arthur Vermeeren","position":"M","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2023":{"1068":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/esp.1/seasons/2023/teams/1068?lang=en&region=us"},"id":"1068"}}}}
+{"id":"345805","name":"Arthur Vermeeren","position":"M","current_team_id":"11420","current_team_name":"RB Leipzig","stints":[{"team_id":"11420","team_name":"RB Leipzig","start_season":"2024","end_season":"2026"}]}
