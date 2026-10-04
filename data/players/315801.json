@@ -1,1 +1,1 @@
-{"id":"315801","name":"Tadeo Allende","position":"F","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2023":{"85":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/esp.1/seasons/2023/teams/85?lang=en&region=us"},"id":"85"}}}}
+{"id":"315801","name":"Tadeo Allende","position":"F","current_team_id":"85","current_team_name":"Celta Vigo","stints":[{"team_id":"85","team_name":"Celta Vigo","start_season":"2023","end_season":"2023"}]}
