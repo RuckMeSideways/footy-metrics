@@ -166,10 +166,53 @@ def main():
         eventlog = get_json(eventlog_url, {"limit": 50})
         print(f"  {eventlog_url} -> success")
         print(f"  top-level keys: {list(eventlog.keys())}")
+
+        # TEST 6a: the 'teams' field itself - this is the presumed mechanism
+        # for transfer detection (rugby's equivalent was a dict keyed by
+        # team id). Print its FULL content, not a truncated preview, since
+        # the previous pilot run cut this off before we could see its shape.
+        teams_field = eventlog.get("teams")
+        print(f"  teams field type: {type(teams_field).__name__}")
+        print(f"  teams field FULL content: {json.dumps(teams_field, default=str)}")
+        if isinstance(teams_field, dict):
+            print(f"  teams dict keys: {list(teams_field.keys())}")
+            for k, v in list(teams_field.items())[:5]:
+                print(f"    key={k} -> {json.dumps(v, default=str)[:300]}")
+        elif isinstance(teams_field, list):
+            print(f"  teams list length: {len(teams_field)}")
+            for v in teams_field[:5]:
+                print(f"    item -> {json.dumps(v, default=str)[:300]}")
+
         events = (eventlog.get("events") or {}).get("items", []) if isinstance(eventlog.get("events"), dict) else eventlog.get("items", [])
         print(f"  {len(events)} event(s) found")
         if events:
-            print(f"  first event raw: {json.dumps(events[0], default=str)[:400]}")
+            print(f"  first event raw FULL: {json.dumps(events[0], default=str)}")
+            # If an individual event entry carries its own team reference
+            # (rather than - or in addition to - the top-level 'teams'
+            # field), that would also work for per-event team attribution.
+            first_event = events[0]
+            if isinstance(first_event, dict):
+                for key in ("team", "teamId", "teams"):
+                    if key in first_event:
+                        print(f"  event-level '{key}': {json.dumps(first_event[key], default=str)[:300]}")
+                # also check inside the nested 'statistics' sub-object, if
+                # fetching it is cheap - this is where per-event splits
+                # (and possibly team context) could also live.
+                stats_ref = (first_event.get("statistics") or {}).get("$ref")
+                if stats_ref:
+                    try:
+                        ev_stats = get_json(stats_ref)
+                        print(f"  first event's statistics -> top-level keys: {list(ev_stats.keys())}")
+                        print(f"  first event's statistics FULL: {json.dumps(ev_stats, default=str)[:600]}")
+                    except Exception as e2:
+                        print(f"    ! failed fetching first event's statistics ref: {e2}")
+
+            # Also check the LAST event - if this player transferred
+            # mid-season, the last event's team context (via whichever
+            # mechanism we find above) should differ from the first's.
+            if len(events) > 1:
+                last_event = events[-1]
+                print(f"  last event raw FULL: {json.dumps(last_event, default=str)}")
     except Exception as e:
         print(f"  ! failed: {e}")
 
