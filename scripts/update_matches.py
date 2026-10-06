@@ -50,7 +50,17 @@ LEAGUES = {
     "rsa.1": "South African Premiership",
 }
 
-MAX_NEW_EVENTS_PER_RUN = 150  # same conservative cap that worked for rugby
+# v3 fix: this used to be a single MAX_NEW_EVENTS_PER_RUN budget shared
+# across all leagues in LEAGUES' dict order, so a league with a big
+# backlog (Premier League, La Liga, Bundesliga - each 1300-1900 matches
+# across 2023-2027) could consume the ENTIRE run's budget every single
+# day, meaning leagues later in the dict (Serie A, Ligue 1, Champions
+# League, World Cup, South African Premiership) never got a turn -
+# confirmed via a real run: after ~2 weeks of daily runs those 5 leagues
+# still had zero events. Giving each league its own guaranteed slice of
+# the budget means every league makes real progress every run, and the
+# full backlog across all 8 fills in together instead of one at a time.
+MAX_NEW_EVENTS_PER_LEAGUE_PER_RUN = 40
 REQUEST_PAUSE_SECONDS = 0.3
 HEADERS = {"User-Agent": "Mozilla/5.0 (FootyMetrics data bridge)"}
 
@@ -179,20 +189,20 @@ def main():
     events_by_id = {e["event_id"]: e for e in load_json(MATCHES_FILE, [])}
     team_name_cache = {}
     athlete_name_cache = {}
-    processed_new = 0
+    processed_new = 0  # total across all leagues, for the final summary line
 
     for slug, league_name in LEAGUES.items():
-        if processed_new >= MAX_NEW_EVENTS_PER_RUN:
-            break
         print(f"Discovering events for {league_name} ({slug})...")
         event_ids = discover_event_ids(slug)
         print(f"  {len(event_ids)} event(s) found")
 
+        processed_this_league = 0
         for eid in event_ids:
             already = events_by_id.get(eid)
             if already and already.get("processed") and already.get("home_score") is not None and already.get("away_score") is not None:
                 continue  # already fully processed with a real score
-            if processed_new >= MAX_NEW_EVENTS_PER_RUN:
+            if processed_this_league >= MAX_NEW_EVENTS_PER_LEAGUE_PER_RUN:
+                print(f"  ...{league_name} hit its per-run cap ({MAX_NEW_EVENTS_PER_LEAGUE_PER_RUN}), moving to the next league")
                 break
 
             try:
@@ -250,11 +260,19 @@ def main():
                 entry["has_stats"] = sides_with_stats == 2
                 events_by_id[eid] = entry
                 processed_new += 1
+                processed_this_league += 1
                 if processed_new % 10 == 0:
                     print(f"  ...{processed_new} new event(s) processed this run")
             except Exception as e:
                 print(f"  ! failed processing event {eid}: {e}")
+                # still counts against this league's per-run cap, so one
+                # persistently-failing event can't stall this league's
+                # budget forever and starve the rest of this run.
+                processed_this_league += 1
             time.sleep(REQUEST_PAUSE_SECONDS)
+
+        if processed_this_league:
+            print(f"  {league_name}: {processed_this_league} new event(s) this run")
 
     save_json(MATCHES_FILE, list(events_by_id.values()))
     print(f"Done. {processed_new} new event(s) processed this run. {len(events_by_id)} total cached.")
