@@ -1,1 +1,1 @@
-{"id":"219719","name":"Ivan Prtajin","position":"F","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2024":{"598":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/ger.1/seasons/2024/teams/598?lang=en&region=us"},"id":"598"}}}}
+{"id":"219719","name":"Ivan Prtajin","position":"F","current_team_id":"598","current_team_name":"1. FC Union Berlin","stints":[{"team_id":"598","team_name":"1. FC Union Berlin","start_season":"2024","end_season":"2024"}]}

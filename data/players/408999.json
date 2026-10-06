@@ -1,1 +1,1 @@
-{"id":"408999","name":"Yannik Wagner","position":"F","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2025":{"6418":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/ger.1/seasons/2025/teams/6418?lang=en&region=us"},"id":"6418"}}}}
+{"id":"408999","name":"Yannik Wagner","position":"F","current_team_id":"6418","current_team_name":"1. FC Heidenheim 1846","stints":[{"team_id":"6418","team_name":"1. FC Heidenheim 1846","start_season":"2025","end_season":"2025"}]}

@@ -1,1 +1,1 @@
-{"id":"297229","name":"Matteo Ruggeri","position":"D","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2025":{"1068":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/esp.1/seasons/2025/teams/1068?lang=en&region=us"},"id":"1068"}}}}
+{"id":"297229","name":"Matteo Ruggeri","position":"D","current_team_id":"1068","current_team_name":"Atl\u00e9tico Madrid","stints":[{"team_id":"1068","team_name":"Atl\u00e9tico Madrid","start_season":"2025","end_season":"2025"}]}
