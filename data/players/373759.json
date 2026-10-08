@@ -1,1 +1,1 @@
-{"id":"373759","name":"Jesse Derry","position":"F","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2025":{"363":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/eng.1/seasons/2025/teams/363?lang=en&region=us"},"id":"363"}}}}
+{"id":"373759","name":"Jesse Derry","position":"F","current_team_id":"363","current_team_name":"Chelsea","stints":[{"team_id":"363","team_name":"Chelsea","start_season":"2025","end_season":"2025"}]}
