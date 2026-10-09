@@ -1,1 +1,1 @@
-{"id":"328024","name":"Lewis Warrington","position":"M","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2023":{"368":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/eng.1/seasons/2023/teams/368?lang=en&region=us"},"id":"368"}},"2024":null}}
+{"id":"328024","name":"Lewis Warrington","position":"M","current_team_id":"368","current_team_name":"Everton","stints":[{"team_id":"368","team_name":"Everton","start_season":"2023","end_season":"2023"}]}

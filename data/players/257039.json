@@ -1,1 +1,1 @@
-{"id":"257039","name":"Vinicius Souza","position":"M","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2023":{"398":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/eng.1/seasons/2023/teams/398?lang=en&region=us"},"id":"398"}},"2024":null,"2025":null}}
+{"id":"257039","name":"Vinicius Souza","position":"M","current_team_id":"138","current_team_name":"VfL Wolfsburg","stints":[{"team_id":"138","team_name":"VfL Wolfsburg","start_season":"2025","end_season":"2025"}]}
