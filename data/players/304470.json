@@ -1,1 +1,1 @@
-{"id":"304470","name":"S\u00e1vio","position":"F","current_team_id":null,"current_team_name":null,"stints":[],"unparsed_teams_by_season":{"2023":{"9812":{"team":{"$ref":"http://sports.core.api.espn.com/v2/sports/soccer/leagues/esp.1/seasons/2023/teams/9812?lang=en&region=us"},"id":"9812"}}}}
+{"id":"304470","name":"S\u00e1vio","position":"F","current_team_id":"9812","current_team_name":"Girona","stints":[{"team_id":"9812","team_name":"Girona","start_season":"2023","end_season":"2023"}]}
